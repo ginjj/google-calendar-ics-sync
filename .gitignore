@@ -1,0 +1,9 @@
+# Ignore config and credentials
+config.gs
+TODO.md
+dumps/
+temp-scripts/
+*.secret.*
+node_modules/
+.DS_Store
+.env
