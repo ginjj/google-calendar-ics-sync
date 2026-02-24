@@ -136,7 +136,6 @@ function parseIcsToData(icsString, feed) {
       item.DTEND = item.DTEND
         ? processIcsDate(item.DTEND, item.DTEND_TZID, isAllDay)
         : new Date(item.DTSTART.getTime() + (isAllDay ? 86400000 : 7200000));
-      console.log(`Parsed: ${item.SUMMARY} | AllDay:${isAllDay} | Start:${item.DTSTART} | End:${item.DTEND}`);
       events.push(item);
     }
   });
