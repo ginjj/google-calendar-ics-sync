@@ -75,6 +75,7 @@ function masterFamilySync() {
         } else {
           // Check if update needed
           const hasChanged = Math.abs(existing.getStartTime().getTime() - item.DTSTART.getTime()) > 1000 ||
+                             Math.abs(existing.getEndTime().getTime() - item.DTEND.getTime()) > 1000 ||
                              existing.getTitle() !== title ||
                              existing.getDescription() !== fullDescription;
           if (hasChanged) {
@@ -124,15 +125,18 @@ function parseIcsToData(icsString, feed) {
       if (keyPart.includes("TZID=")) {
         item[key + "_TZID"] = keyPart.match(/TZID=(.*)/)[1];
       }
-      if (keyPart.includes("VALUE=DATE")) {
+      // Mark all-day if either DTSTART or DTEND has VALUE=DATE, or value is 8 chars (YYYYMMDD)
+      if (keyPart.includes("VALUE=DATE") || ((key === "DTSTART" || key === "DTEND") && /^\d{8}$/.test(value))) {
         item.ALLDAY = true;
       }
     });
     if (item.UID && item.SUMMARY && item.DTSTART) {
-      item.DTSTART = processIcsDate(item.DTSTART, item.DTSTART_TZID, item.ALLDAY);
+      const isAllDay = item.ALLDAY;
+      item.DTSTART = processIcsDate(item.DTSTART, item.DTSTART_TZID, isAllDay);
       item.DTEND = item.DTEND
-        ? processIcsDate(item.DTEND, item.DTEND_TZID, item.ALLDAY)
-        : new Date(item.DTSTART.getTime() + (item.ALLDAY ? 86400000 : 7200000));
+        ? processIcsDate(item.DTEND, item.DTEND_TZID, isAllDay)
+        : new Date(item.DTSTART.getTime() + (isAllDay ? 86400000 : 7200000));
+      console.log(`Parsed: ${item.SUMMARY} | AllDay:${isAllDay} | Start:${item.DTSTART} | End:${item.DTEND}`);
       events.push(item);
     }
   });
