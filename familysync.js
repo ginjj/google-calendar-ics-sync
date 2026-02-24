@@ -17,20 +17,30 @@ function masterFamilySync() {
       }
 
       // Query all events in the calendar and filter by tag
-      const allEvents = familyCal.getEvents(new Date(2000, 0, 1), new Date(2100, 0, 1));
-      // Map: UID -> array of events (to handle duplicates)
+      // Use paginated search to avoid DEADLINE_EXCEEDED on large calendars
       const calendarMap = {};
-      allEvents.forEach(e => {
-        const desc = e.getDescription();
-        if (desc && desc.includes("[UID:") && desc.includes("[" + feed.tag + "]")) {
-          const match = desc.match(/\[UID:(.*?)\]/);
-          if (match) {
-            const uid = match[1];
-            if (!calendarMap[uid]) calendarMap[uid] = [];
-            calendarMap[uid].push(e);
+      let pageStart = new Date(2000, 0, 1);
+      const pageEnd = new Date(2100, 0, 1);
+      const PAGE_SIZE = 200;
+      while (true) {
+        const page = familyCal.getEvents(pageStart, pageEnd, {max: PAGE_SIZE});
+        if (!page.length) break;
+        page.forEach(e => {
+          const desc = e.getDescription();
+          if (desc && desc.includes("[UID:") && desc.includes("[" + feed.tag + "]")) {
+            const match = desc.match(/\[UID:(.*?)\]/);
+            if (match) {
+              const uid = match[1];
+              if (!calendarMap[uid]) calendarMap[uid] = [];
+              calendarMap[uid].push(e);
+            }
           }
-        }
-      });
+        });
+        // If we got fewer than a full page, we're done
+        if (page.length < PAGE_SIZE) break;
+        // Advance start to just after the last event returned
+        pageStart = new Date(page[page.length - 1].getStartTime().getTime() + 1);
+      }
 
       // Deduplicate: For each UID, keep only one event (the first), delete the rest
       Object.keys(calendarMap).forEach(uid => {
@@ -61,7 +71,7 @@ function masterFamilySync() {
 
         if (!existing) {
           if (isAllDay) {
-            familyCal.createAllDayEvent(title, item.DTSTART, {location, description: fullDescription});
+            familyCal.createAllDayEvent(title, item.DTSTART, item.DTEND, {location, description: fullDescription});
           } else {
             familyCal.createEvent(title, item.DTSTART, end, {location, description: fullDescription});
           }
@@ -73,7 +83,7 @@ function masterFamilySync() {
           if (hasChanged) {
             if (isAllDay) {
               existing.deleteEvent();
-              familyCal.createAllDayEvent(title, item.DTSTART, {location, description: fullDescription});
+              familyCal.createAllDayEvent(title, item.DTSTART, item.DTEND, {location, description: fullDescription});
             } else {
               existing.setTitle(title);
               existing.setTime(item.DTSTART, end);
@@ -122,8 +132,10 @@ function parseIcsToData(icsString, feed) {
       }
     });
     if (item.UID && item.SUMMARY && item.DTSTART) {
-      item.DTSTART = processIcsDate(item.DTSTART, item.DTSTART_TZID);
-      item.DTEND = processIcsDate(item.DTEND, item.DTEND_TZID) || (item.DTSTART ? new Date(item.DTSTART.getTime() + 2 * 60 * 60 * 1000) : null);
+      item.DTSTART = processIcsDate(item.DTSTART, item.DTSTART_TZID, item.ALLDAY);
+      item.DTEND = item.DTEND
+        ? processIcsDate(item.DTEND, item.DTEND_TZID, item.ALLDAY)
+        : new Date(item.DTSTART.getTime() + (item.ALLDAY ? 86400000 : 7200000));
       events.push(item);
     }
   });
@@ -131,17 +143,18 @@ function parseIcsToData(icsString, feed) {
 }
 
 // Time zone aware ICS date parser
-function processIcsDate(dateStr, tzid) {
+function processIcsDate(dateStr, tzid, isAllDay) {
   if (!dateStr) return null;
   const y = dateStr.substring(0,4), m = dateStr.substring(4,6)-1, d = dateStr.substring(6,8);
+  if (isAllDay || dateStr.length === 8) {
+    // All-day: return midnight local time
+    return new Date(y, m, d);
+  }
   const h = dateStr.length >= 11 ? dateStr.substring(9,11) : 0;
   const min = dateStr.length >= 13 ? dateStr.substring(11,13) : 0;
   const s = dateStr.length >= 15 ? dateStr.substring(13,15) : 0;
   if (dateStr.endsWith("Z")) {
     return new Date(Date.UTC(y, m, d, h, min, s));
-  }
-  if (tzid) {
-    return new Date(y, m, d, h, min, s);
   }
   return new Date(y, m, d, h, min, s);
 }
