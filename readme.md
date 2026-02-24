@@ -1,21 +1,53 @@
-# Family Calendar ICS Sync
+# Google Calendar Automations (Google Apps Script)
 
-This project syncs ICS calendar feeds to Google Calendar using Google Apps Script, with robust deduplication and filtering.
+Two Google Apps Script automations for managing a shared Google Calendar.
 
-## Features
-- Syncs multiple ICS feeds to Google Calendar
-- UID-based deduplication (no duplicate events)
-- Configurable feed filters (e.g., only home games)
-- Cleanup and export utilities
+---
 
-## Setup
-1. Copy `config.example.gs` to `config.gs` and fill in your real feed info (never commit `config.gs`).
+## Script 1: ICS Feed Sync (`familysync.js`)
+
+Syncs one or more external ICS calendar feeds into a shared Google Calendar.
+
+### Features
+- Config-driven: add any number of ICS feeds in `config.gs`
+- UID-based differential sync — no duplicates, no unnecessary updates
+- Per-feed filter functions (e.g. only home football games)
+- Cleans up events removed from the feed
+
+### Setup
+1. Copy `config.example.gs` to `config.gs` and fill in your feeds and calendar ID (never commit `config.gs`).
 2. Deploy `familysync.js` and `config.gs` to your Google Apps Script project.
-3. Use `cleanupOldSyncEvents.js` and `exportAllCalendarEventsToTxt.js` as needed.
-4. See `TODO.md` for setup and usage tasks.
+3. Set a time-based trigger on `masterFamilySync()` to run on a schedule.
+
+---
+
+## Script 2: Gym Email Sync (`syncGymWithAI.js`)
+
+Reads gym booking confirmation/cancellation emails via Gmail and creates or removes calendar events automatically using the Gemini AI API to parse the email content.
+
+### Features
+- Monitors a Gmail label for gym booking emails
+- Uses Gemini AI to extract action (book/cancel/waitlist), class name, and time
+- Creates, updates, or removes calendar events accordingly
+- Marks processed emails with a "done" label to avoid reprocessing
+
+### Setup
+Set the following in Apps Script **Script Properties** (Project Settings → Script Properties):
+
+| Property | Description |
+|---|---|
+| `GEMINI_API_KEY` | Your Gemini API key |
+| `GYM_CALENDAR_ID` | Target Google Calendar ID |
+| `GYM_LABEL_TO_PROCESS` | Gmail label to watch (default: `GymSync`) |
+| `GYM_LABEL_DONE` | Gmail label for processed emails (default: `Processed`) |
+
+Set a time-based trigger on `syncGymWithAI()` to run periodically.
+
+---
 
 ## Security
-- `config.gs` is gitignored and should never be committed.
+- `config.gs` is gitignored and should never be committed. See `config.example.gs` for the required structure.
+- All sensitive values for the gym sync are stored in Apps Script Script Properties, not in code.
 
 ## License
 MIT
