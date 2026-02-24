@@ -8,7 +8,15 @@ function masterFamilySync() {
 
   FEEDS.forEach(feed => {
     try {
-      const response = UrlFetchApp.fetch(feed.url);
+      const response = UrlFetchApp.fetch(feed.url, {
+        muteHttpExceptions: true,
+        followRedirects: true,
+        validateHttpsCertificates: false
+      });
+      if (response.getResponseCode() !== 200) {
+        console.error("Fail: " + feed.name + " - HTTP " + response.getResponseCode());
+        return;
+      }
       const icalData = response.getContentText();
       let feedEvents = parseIcsToData(icalData, feed);
       // Apply filter function if present
@@ -17,30 +25,19 @@ function masterFamilySync() {
       }
 
       // Query all events in the calendar and filter by tag
-      // Use paginated search to avoid DEADLINE_EXCEEDED on large calendars
       const calendarMap = {};
-      let pageStart = new Date(2000, 0, 1);
-      const pageEnd = new Date(2100, 0, 1);
-      const PAGE_SIZE = 200;
-      while (true) {
-        const page = familyCal.getEvents(pageStart, pageEnd, {max: PAGE_SIZE});
-        if (!page.length) break;
-        page.forEach(e => {
-          const desc = e.getDescription();
-          if (desc && desc.includes("[UID:") && desc.includes("[" + feed.tag + "]")) {
-            const match = desc.match(/\[UID:(.*?)\]/);
-            if (match) {
-              const uid = match[1];
-              if (!calendarMap[uid]) calendarMap[uid] = [];
-              calendarMap[uid].push(e);
-            }
+      const allEvents = familyCal.getEvents(new Date(2000, 0, 1), new Date(2100, 0, 1));
+      allEvents.forEach(e => {
+        const desc = e.getDescription();
+        if (desc && desc.includes("[UID:") && desc.includes("[" + feed.tag + "]")) {
+          const match = desc.match(/\[UID:(.*?)\]/);
+          if (match) {
+            const uid = match[1];
+            if (!calendarMap[uid]) calendarMap[uid] = [];
+            calendarMap[uid].push(e);
           }
-        });
-        // If we got fewer than a full page, we're done
-        if (page.length < PAGE_SIZE) break;
-        // Advance start to just after the last event returned
-        pageStart = new Date(page[page.length - 1].getStartTime().getTime() + 1);
-      }
+        }
+      });
 
       // Deduplicate: For each UID, keep only one event (the first), delete the rest
       Object.keys(calendarMap).forEach(uid => {
