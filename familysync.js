@@ -17,35 +17,32 @@ function masterFamilySync() {
 
   FEEDS.forEach(feed => {
     const feedStart = Date.now();
-    let slow = false;
     try {
       let response, fetchError = null;
       try {
         response = UrlFetchApp.fetch(feed.url, {
           muteHttpExceptions: true,
           followRedirects: true,
-          validateHttpsCertificates: false,
-          timeout: 30 // seconds (max allowed by Apps Script)
+          validateHttpsCertificates: false
         });
       } catch (e) {
         fetchError = e;
       }
       const fetchTime = (Date.now() - feedStart) / 1000;
       if (fetchError || !response || response.getResponseCode() !== 200) {
-        console.error(`Feed ${feed.name} failed: ${fetchError ? fetchError : 'HTTP ' + (response ? response.getResponseCode() : 'NO RESPONSE')}`);
-        slow = fetchTime > 25;
-        if (slow) {
-          slowFeeds[feed.url] = (slowFeeds[feed.url] || 0) + 1;
-        }
+        console.error(`Feed ${feed.name} failed: ${fetchError ? fetchError : 'HTTP ' + (response ? response.getResponseCode() : 'NO RESPONSE')} (${fetchTime}s)`);
+        // Count any failure (slow or fast) toward the repeated-failure threshold
+        slowFeeds[feed.url] = (slowFeeds[feed.url] || 0) + 1;
         return;
       }
-      slow = fetchTime > 25;
-      if (slow) {
+      if (fetchTime > 25) {
         slowFeeds[feed.url] = (slowFeeds[feed.url] || 0) + 1;
-        console.warn(`Feed ${feed.name} was slow: ${fetchTime}s`);
-      } else {
-        slowFeeds[feed.url] = 0;
+        console.info(`Feed ${feed.name} was slow: ${fetchTime}s`);
+        // Skip calendar operations this run to avoid overall timeout
+        return;
       }
+      // Feed responded successfully and promptly — reset failure count
+      slowFeeds[feed.url] = 0;
       const icalData = response.getContentText();
       let feedEvents = parseIcsToData(icalData, feed);
       // Apply filter function if present
