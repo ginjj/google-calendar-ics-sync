@@ -92,6 +92,7 @@ function masterFamilySync() {
         const end = item.DTEND || (item.DTSTART ? new Date(item.DTSTART.getTime() + 2 * 60 * 60 * 1000) : null);
 
         if (!existing) {
+          // New event — create and apply colour
           let newEvent;
           if (isAllDay) {
             newEvent = familyCal.createAllDayEvent(title, item.DTSTART, item.DTEND, {location, description: fullDescription});
@@ -100,7 +101,8 @@ function masterFamilySync() {
           }
           if (feed.color) newEvent.setColor(feed.color);
         } else {
-          // Check if update needed
+          // Existing event — only update if core feed data has changed
+          // Does NOT touch colour or any other user-customised fields
           const hasChanged = Math.abs(existing.getStartTime().getTime() - item.DTSTART.getTime()) > 1000 ||
                              Math.abs(existing.getEndTime().getTime() - item.DTEND.getTime()) > 1000 ||
                              existing.getTitle() !== title ||
@@ -117,8 +119,6 @@ function masterFamilySync() {
               existing.setLocation(location);
             }
           }
-          // Always ensure colour is correct (in case it was manually changed or reset)
-          if (feed.color) existing.setColor(feed.color);
         }
       });
 
