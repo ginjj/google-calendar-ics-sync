@@ -5,17 +5,46 @@
 
 function masterFamilySync() {
   const familyCal = CalendarApp.getCalendarById(FAMILY_CAL_ID);
+  // Track slow feeds in script properties
+  const props = PropertiesService.getScriptProperties();
+  let slowFeeds = {};
+  try {
+    slowFeeds = JSON.parse(props.getProperty('SLOW_FEEDS') || '{}');
+  } catch (e) {}
+
+  // Single calendar scan shared across all feeds — split by tag per feed
+  const allCalendarEvents = familyCal.getEvents(new Date(2000, 0, 1), new Date(2100, 0, 1));
 
   FEEDS.forEach(feed => {
+    const feedStart = Date.now();
+    let slow = false;
     try {
-      const response = UrlFetchApp.fetch(feed.url, {
-        muteHttpExceptions: true,
-        followRedirects: true,
-        validateHttpsCertificates: false
-      });
-      if (response.getResponseCode() !== 200) {
-        console.error("Fail: " + feed.name + " - HTTP " + response.getResponseCode());
+      let response, fetchError = null;
+      try {
+        response = UrlFetchApp.fetch(feed.url, {
+          muteHttpExceptions: true,
+          followRedirects: true,
+          validateHttpsCertificates: false,
+          timeout: 30 // seconds (max allowed by Apps Script)
+        });
+      } catch (e) {
+        fetchError = e;
+      }
+      const fetchTime = (Date.now() - feedStart) / 1000;
+      if (fetchError || !response || response.getResponseCode() !== 200) {
+        console.error(`Feed ${feed.name} failed: ${fetchError ? fetchError : 'HTTP ' + (response ? response.getResponseCode() : 'NO RESPONSE')}`);
+        slow = fetchTime > 25;
+        if (slow) {
+          slowFeeds[feed.url] = (slowFeeds[feed.url] || 0) + 1;
+        }
         return;
+      }
+      slow = fetchTime > 25;
+      if (slow) {
+        slowFeeds[feed.url] = (slowFeeds[feed.url] || 0) + 1;
+        console.warn(`Feed ${feed.name} was slow: ${fetchTime}s`);
+      } else {
+        slowFeeds[feed.url] = 0;
       }
       const icalData = response.getContentText();
       let feedEvents = parseIcsToData(icalData, feed);
@@ -24,10 +53,9 @@ function masterFamilySync() {
         feedEvents = feedEvents.filter(feed.filter);
       }
 
-      // Query all events in the calendar and filter by tag
+      // Build calendarMap for this feed from the shared calendar scan
       const calendarMap = {};
-      const allEvents = familyCal.getEvents(new Date(2000, 0, 1), new Date(2100, 0, 1));
-      allEvents.forEach(e => {
+      allCalendarEvents.forEach(e => {
         const desc = e.getDescription();
         if (desc && desc.includes("[UID:") && desc.includes("[" + feed.tag + "]")) {
           const match = desc.match(/\[UID:(.*?)\]/);
@@ -103,6 +131,15 @@ function masterFamilySync() {
       console.error("Fail: " + feed.name + " - " + err.message);
     }
   });
+  // Save slow feed counts
+  props.setProperty('SLOW_FEEDS', JSON.stringify(slowFeeds));
+  // Collect all feeds that have been slow 3+ times in a row
+  const failingFeeds = Object.keys(slowFeeds)
+    .filter(url => slowFeeds[url] >= 3)
+    .map(url => `Feed: ${url}\nSlow count: ${slowFeeds[url]}`);
+  if (failingFeeds.length > 0) {
+    throw new Error('FAILED - Script was unable to access the following feed(s) 3 times in a row:\n' + failingFeeds.join('\n\n'));
+  }
 }
 
 
