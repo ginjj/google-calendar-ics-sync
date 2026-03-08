@@ -1,7 +1,7 @@
-
 // Requires config.gs in the same Apps Script project:
 //   var FAMILY_CAL_ID = 'your_calendar_id';
 //   var FEEDS = [ ... ];
+//   Feed color field is a CalendarApp.EventColor key, e.g. "RED", "CYAN", "MAUVE"
 
 function masterFamilySync() {
   const familyCal = CalendarApp.getCalendarById(FAMILY_CAL_ID);
@@ -99,7 +99,9 @@ function masterFamilySync() {
           } else {
             newEvent = familyCal.createEvent(title, item.DTSTART, end, {location, description: fullDescription});
           }
-          if (feed.color) newEvent.setColor(feed.color);
+          if (feed.color) {
+            newEvent.setColor(CalendarApp.EventColor[feed.color]);
+          }
         } else {
           // Existing event — only update if core feed data has changed
           // Does NOT touch colour or any other user-customised fields
@@ -111,13 +113,19 @@ function masterFamilySync() {
             if (isAllDay) {
               existing.deleteEvent();
               const newEvent = familyCal.createAllDayEvent(title, item.DTSTART, item.DTEND, {location, description: fullDescription});
-              if (feed.color) newEvent.setColor(feed.color);
+              if (feed.color) {
+                newEvent.setColor(CalendarApp.EventColor[feed.color]);
+              }
             } else {
               existing.setTitle(title);
               existing.setTime(item.DTSTART, end);
               existing.setDescription(fullDescription);
               existing.setLocation(location);
             }
+          }
+          // Only set colour if event has no explicit colour (default) — don't overwrite user-customised colours
+          if (feed.color && existing.getColor() === '') {
+            existing.setColor(CalendarApp.EventColor[feed.color]);
           }
         }
       });
